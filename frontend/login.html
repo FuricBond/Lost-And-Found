@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Lost & Found</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <a href="/" class="auth-logo">🔍 Lost & Found</a>
+                <h1>Welcome Back</h1>
+                <p>Sign in to your account</p>
+            </div>
+            
+            <form id="loginForm" class="auth-form">
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" required placeholder="you@example.com" autocomplete="email">
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" required placeholder="••••••••" autocomplete="current-password">
+                </div>
+                
+                <button type="submit" id="submitBtn" class="btn btn-primary btn-block btn-lg">Sign In</button>
+            </form>
+            
+            <div class="auth-footer">
+                <p>Don't have an account? <a href="/static/register.html">Create one</a></p>
+                <a href="/" class="back-link">← Back to Home</a>
+            </div>
+        </div>
+    </div>
+    
+    <div id="toast" class="toast"></div>
+    
+    <script src="/static/js/api.js"></script>
+    <script>
+        // Redirect if already logged in
+        if (API.isLoggedIn()) {
+            window.location.href = '/';
+        }
+        
+        document.getElementById('loginForm').onsubmit = async function(e) {
+            e.preventDefault();
+            
+            const btn = document.getElementById('submitBtn');
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            
+            if (!email || !password) {
+                UI.toast('Please enter email and password', 'error');
+                return false;
+            }
+            
+            btn.textContent = 'Signing in...';
+            btn.disabled = true;
+            
+            try {
+                console.log('Attempting login for:', email);
+                
+                // Login - direct fetch to avoid any issues
+                const response = await fetch('/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                console.log('Login response:', response.status, data);
+                
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Login failed');
+                }
+                
+                // Save token
+                const token = data.access_token;
+                console.log('Token received, saving...');
+                localStorage.setItem('authToken', token);
+                
+                // Get user profile
+                try {
+                    const userResp = await fetch('/api/v1/users/me', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (userResp.ok) {
+                        const user = await userResp.json();
+                        localStorage.setItem('currentUser', JSON.stringify(user));
+                        console.log('User saved:', user.email);
+                    }
+                } catch (e) {
+                    console.log('Could not fetch profile:', e);
+                }
+                
+                UI.toast('Login successful! Redirecting...', 'success');
+                
+                // Redirect after short delay
+                setTimeout(function() {
+                    console.log('Redirecting to home...');
+                    window.location.href = '/';
+                }, 500);
+                
+            } catch (error) {
+                console.error('Login error:', error);
+                UI.toast(error.message, 'error');
+                btn.textContent = 'Sign In';
+                btn.disabled = false;
+            }
+            
+            return false;
+        };
+    </script>
+</body>
+</html>

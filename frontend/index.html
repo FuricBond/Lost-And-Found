@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lost & Found</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-brand">
+            <a href="/" style="text-decoration: none; display: flex; align-items: center; gap: 0.5rem;">
+                <span class="logo">🔍</span>
+                <span class="brand-text">Lost & Found</span>
+            </a>
+        </div>
+        <div class="nav-links">
+            <a href="/" class="nav-link active">Home</a>
+            <a href="/static/report.html" class="nav-link">Report Item</a>
+            <a href="/static/browse.html" class="nav-link">Browse Items</a>
+            <a href="/static/my-items.html" class="nav-link" id="myItemsLink" style="display:none;">My Items</a>
+        </div>
+        <div class="nav-auth" id="navAuth">
+            <a href="/static/login.html" class="btn btn-outline">Login</a>
+            <a href="/static/register.html" class="btn btn-primary">Register</a>
+        </div>
+        <div class="nav-user" id="navUser" style="display: none;">
+            <span class="user-name" id="userName"></span>
+            <button class="btn btn-outline" onclick="logout()">Logout</button>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <section class="page active">
+            <div class="hero">
+                <h1>Find What You've Lost</h1>
+                <p>Connect lost items with their owners using AI-powered image matching</p>
+                <div class="hero-buttons">
+                    <a href="/static/report.html" class="btn btn-primary btn-lg">Report Lost Item</a>
+                    <a href="/static/report.html" class="btn btn-secondary btn-lg">Report Found Item</a>
+                </div>
+            </div>
+            
+            <div class="features">
+                <div class="feature-card">
+                    <div class="feature-icon">📸</div>
+                    <h3>Upload Photos</h3>
+                    <p>Take or upload photos of lost or found items</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🤖</div>
+                    <h3>AI Matching</h3>
+                    <p>Our AI automatically finds potential matches</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔔</div>
+                    <h3>Get Notified</h3>
+                    <p>Receive notifications when matches are found</p>
+                </div>
+            </div>
+
+            <div class="recent-section">
+                <h2>Your Recent Items</h2>
+                <div class="items-grid" id="recentItems">
+                    <p class="loading">Loading...</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div id="toast" class="toast"></div>
+
+    <script src="/static/js/api.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            UI.updateNav();
+            loadRecentItems();
+        });
+
+        async function loadRecentItems() {
+            const container = document.getElementById('recentItems');
+            
+            if (!API.isLoggedIn()) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <span class="icon">🔐</span>
+                        <h3>Login to see your items</h3>
+                        <p>Create an account to report and track lost items</p>
+                        <a href="/static/login.html" class="btn btn-primary">Login</a>
+                    </div>
+                `;
+                return;
+            }
+            
+            try {
+                const data = await API.items.list({ page_size: 6 });
+                const items = data.items || [];
+                
+                if (items.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <span class="icon">📦</span>
+                            <h3>No items yet</h3>
+                            <p>Report a lost or found item to get started</p>
+                            <a href="/static/report.html" class="btn btn-primary">Report Item</a>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                container.innerHTML = items.map(item => `
+                    <div class="item-card" onclick="window.location='/static/my-items.html'">
+                        ${item.images?.length > 0 && item.images[0].file_path_original
+                            ? `<img src="/uploads/${item.images[0].file_path_thumbnail || item.images[0].file_path_original}" 
+                                   class="item-image" onerror="this.outerHTML='<div class=\\'item-placeholder\\'>📷</div>'">`
+                            : '<div class="item-placeholder">📷</div>'
+                        }
+                        <div class="item-body">
+                            <span class="item-badge ${item.lost_or_found === 'lost' ? 'badge-lost' : 'badge-found'}">
+                                ${item.lost_or_found === 'lost' ? '😢 Lost' : '🎉 Found'}
+                            </span>
+                            <span class="item-category">${UI.getCategoryIcon(item.item_type)} ${item.item_type}</span>
+                            <h3 class="item-title">${UI.escapeHtml(item.title)}</h3>
+                            <div class="item-meta">
+                                <span>📍 ${item.location_name || 'Unknown'}</span>
+                                <span>📅 ${UI.formatDate(item.event_date)}</span>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+                
+            } catch (error) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <span class="icon">❌</span>
+                        <h3>Could not load items</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>

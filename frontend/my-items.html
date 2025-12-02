@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Items - Lost & Found</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-brand">
+            <a href="/" style="text-decoration: none; display: flex; align-items: center; gap: 0.5rem;">
+                <span class="logo">🔍</span>
+                <span class="brand-text">Lost & Found</span>
+            </a>
+        </div>
+        <div class="nav-links">
+            <a href="/" class="nav-link">Home</a>
+            <a href="/static/report.html" class="nav-link">Report Item</a>
+            <a href="/static/browse.html" class="nav-link">Browse</a>
+            <a href="/static/my-items.html" class="nav-link active">My Items</a>
+        </div>
+        <div class="nav-auth" id="navAuth">
+            <a href="/static/login.html" class="btn btn-outline">Login</a>
+            <a href="/static/register.html" class="btn btn-primary">Register</a>
+        </div>
+        <div class="nav-user" id="navUser" style="display: none;">
+            <span class="user-name" id="userName"></span>
+            <button class="btn btn-outline" onclick="logout()">Logout</button>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="page-header">
+            <h1>My Items</h1>
+            <p>Manage your reported items and view matches</p>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('items')">📦 My Items</button>
+            <button class="tab" onclick="showTab('matches')">🔗 My Matches</button>
+            <button class="tab" onclick="showTab('notifications')">🔔 Notifications <span id="notifBadge" class="badge" style="display:none">0</span></button>
+        </div>
+
+        <!-- My Items Tab -->
+        <div id="itemsTab" class="tab-content active">
+            <div class="items-grid" id="myItemsGrid">
+                <p class="loading">Loading your items...</p>
+            </div>
+        </div>
+
+        <!-- Matches Tab -->
+        <div id="matchesTab" class="tab-content" style="display: none;">
+            <div class="matches-list" id="matchesList">
+                <p class="loading">Loading matches...</p>
+            </div>
+        </div>
+
+        <!-- Notifications Tab -->
+        <div id="notificationsTab" class="tab-content" style="display: none;">
+            <div class="notifications-list" id="notificationsList">
+                <p class="loading">Loading notifications...</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Match Detail Modal -->
+    <div id="matchModal" class="modal">
+        <div class="modal-content modal-lg">
+            <span class="close" onclick="closeMatchModal()">&times;</span>
+            <div id="matchDetail">
+                <p class="loading">Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Find Matches Modal -->
+    <div id="findMatchesModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeFindMatchesModal()">&times;</span>
+            <h2>🔍 Find Matches</h2>
+            <div id="findMatchesContent">
+                <div class="form-group">
+                    <label>Search Radius (km)</label>
+                    <input type="number" id="searchRadius" value="50" min="1" max="500">
+                </div>
+                <div class="form-group">
+                    <label>Time Range (days)</label>
+                    <input type="number" id="searchDays" value="30" min="1" max="365">
+                </div>
+                <div class="form-group">
+                    <label>Minimum Score (0-1)</label>
+                    <input type="number" id="searchMinScore" value="0.5" min="0" max="1" step="0.1">
+                </div>
+                <button class="btn btn-primary btn-block" onclick="runFindMatches()">
+                    🔍 Search for Matches
+                </button>
+                <div id="findMatchesResults" style="margin-top: 1rem;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <!-- Image Lightbox for Full View -->
+    <div id="imageLightbox" class="image-lightbox" onclick="if(event.target === this) closeLightbox()">
+        <div class="lightbox-content">
+            <button class="lightbox-close" onclick="closeLightbox()">&times;</button>
+            <button id="lightboxPrev" class="lightbox-nav lightbox-prev" onclick="event.stopPropagation(); navigateLightbox(-1)">&#10094;</button>
+            <img id="lightboxImg" class="lightbox-img" src="" alt="Full size image">
+            <button id="lightboxNext" class="lightbox-nav lightbox-next" onclick="event.stopPropagation(); navigateLightbox(1)">&#10095;</button>
+            <div id="lightboxCounter" class="lightbox-counter">1 / 1</div>
+        </div>
+    </div>
+
+    <script src="/static/js/api.js"></script>
+    <script>
+        let currentItemId = null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!API.isLoggedIn()) {
+                window.location.replace('/static/login.html');
+                return;
+            }
+            UI.updateNav();
+            loadMyItems();
+            loadMatches();
+            loadNotifications();
+        });
+
+        function showTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+            event.target.classList.add('active');
+            document.getElementById(tab + 'Tab').style.display = 'block';
+        }
+
+        // ==================== MY ITEMS ====================
+        async function loadMyItems() {
+            const container = document.getElementById('myItemsGrid');
+            
+            try {
+                const data = await API.items.list({ page_size: 50 });
+                renderMyItems(container, data.items || []);
+            } catch (error) {
+                container.innerHTML = `<div class="empty-state"><span class="icon">❌</span><p>${error.message}</p></div>`;
+            }
+        }
+
+        function renderMyItems(container, items) {
+            if (items.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <span class="icon">📦</span>
+                        <h3>No items yet</h3>
+                        <p>Report a lost or found item to get started</p>
+                        <a href="/static/report.html" class="btn btn-primary">Report Item</a>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = items.map(item => `
+                <div class="item-card">
+                    ${item.images?.length > 0 && item.images[0].file_path_original
+                        ? `<img src="/uploads/${item.images[0].file_path_thumbnail || item.images[0].file_path_original}" 
+                               class="item-image" onerror="this.outerHTML='<div class=\\'item-placeholder\\'>📷</div>'">`
+                        : '<div class="item-placeholder">📷</div>'
+                    }
+                    <div class="item-body">
+                        <span class="item-badge ${item.lost_or_found === 'lost' ? 'badge-lost' : 'badge-found'}">
+                            ${item.lost_or_found === 'lost' ? '😢 Lost' : '🎉 Found'}
+                        </span>
+                        <span class="item-category">${UI.getCategoryIcon(item.item_type)} ${item.item_type}</span>
+                        <h3 class="item-title">${UI.escapeHtml(item.title)}</h3>
+                        <div class="item-meta">
+                            <span>📍 ${item.location_name || 'Unknown'}</span>
+                            <span>📅 ${UI.formatDate(item.event_date)}</span>
+                        </div>
+                        <span class="status-badge status-${item.status}">${item.status}</span>
+                        <div class="item-actions">
+                            <button class="btn btn-sm btn-primary" onclick="openFindMatches('${item.id}')">🔍 Find Matches</button>
+                            <button class="btn btn-sm btn-outline" onclick="deleteItem('${item.id}')">🗑️ Delete</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function openFindMatches(itemId) {
+            currentItemId = itemId;
+            document.getElementById('findMatchesResults').innerHTML = '';
+            document.getElementById('findMatchesModal').classList.add('show');
+        }
+
+        function closeFindMatchesModal() {
+            document.getElementById('findMatchesModal').classList.remove('show');
+            currentItemId = null;
+        }
+
+        async function runFindMatches() {
+            if (!currentItemId) return;
+            
+            const resultsDiv = document.getElementById('findMatchesResults');
+            resultsDiv.innerHTML = '<p class="loading">🔍 Searching for matches...</p>';
+            
+            try {
+                const data = await API.items.findMatches(currentItemId, {
+                    radius_km: document.getElementById('searchRadius').value,
+                    time_range_days: document.getElementById('searchDays').value,
+                    min_score: document.getElementById('searchMinScore').value
+                });
+                
+                const matches = data.matches || [];
+                
+                if (matches.length === 0) {
+                    resultsDiv.innerHTML = `<div class="empty-state"><span class="icon">🔍</span><p>No matches found.</p></div>`;
+                } else {
+                    resultsDiv.innerHTML = `
+                        <h3>Found ${matches.length} potential match(es)!</h3>
+                        ${matches.map(m => `
+                            <div class="match-card" onclick="viewMatch('${m.id}')">
+                                <div class="match-score">${(m.overall_score * 100).toFixed(0)}%</div>
+                                <div class="match-info">
+                                    <strong>${m.target_item?.title || 'Unknown'}</strong>
+                                    <span>${m.distance_km ? m.distance_km.toFixed(1) + ' km' : ''}</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    `;
+                    UI.toast(`Found ${matches.length} matches!`, 'success');
+                    loadMatches();
+                }
+            } catch (error) {
+                resultsDiv.innerHTML = `<p class="error">❌ ${error.message}</p>`;
+            }
+        }
+
+        async function deleteItem(itemId) {
+            if (!confirm('Delete this item?')) return;
+            try {
+                await API.items.delete(itemId);
+                UI.toast('Item deleted', 'success');
+                loadMyItems();
+            } catch (error) {
+                UI.toast(error.message, 'error');
+            }
+        }
+
+        // ==================== MATCHES ====================
+        async function loadMatches() {
+            const container = document.getElementById('matchesList');
+            try {
+                const matches = await API.matches.list({ page_size: 50 });
+                renderMatches(container, Array.isArray(matches) ? matches : []);
+            } catch (error) {
+                container.innerHTML = `<div class="empty-state"><span class="icon">❌</span><p>${error.message}</p></div>`;
+            }
+        }
+
+        function renderMatches(container, matches) {
+            if (matches.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <span class="icon">🔗</span>
+                        <h3>No matches yet</h3>
+                        <p>Use "Find Matches" on your items</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = matches.map(match => `
+                <div class="match-item" onclick="viewMatch('${match.id}')">
+                    <div class="match-score-lg ${match.status === 'both_confirmed' ? 'confirmed' : ''}">
+                        ${((match.overall_score || 0) * 100).toFixed(0)}%
+                    </div>
+                    <div class="match-details">
+                        <div class="match-items">
+                            <span>${match.source_item?.title || 'Your Item'}</span>
+                            <span class="match-arrow">↔️</span>
+                            <span>${match.target_item?.title || 'Matched Item'}</span>
+                        </div>
+                        <div class="match-meta">
+                            <span class="status-badge status-${match.status}">${formatStatus(match.status)}</span>
+                            <span>📅 ${UI.formatDate(match.created_at)}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function formatStatus(status) {
+            const map = { pending: '⏳ Pending', source_confirmed: '✓ You Confirmed', 
+                target_confirmed: '✓ They Confirmed', both_confirmed: '✅ Confirmed', rejected: '❌ Rejected' };
+            return map[status] || status;
+        }
+
+        // Store images for lightbox
+        let currentMatchImages = [];
+
+        async function viewMatch(matchId) {
+            const modal = document.getElementById('matchModal');
+            const detail = document.getElementById('matchDetail');
+            modal.classList.add('show');
+            detail.innerHTML = '<p class="loading">Loading...</p>';
+            
+            try {
+                const match = await API.matches.get(matchId);
+                
+                // Prepare images for both items
+                const sourceImages = (match.source_item?.images || []).filter(img => img.file_path_original).map(img => ({
+                    thumbnail: `/uploads/${img.file_path_thumbnail || img.file_path_original}`,
+                    original: `/uploads/${img.file_path_processed || img.file_path_original}`
+                }));
+                const targetImages = (match.target_item?.images || []).filter(img => img.file_path_original).map(img => ({
+                    thumbnail: `/uploads/${img.file_path_thumbnail || img.file_path_original}`,
+                    original: `/uploads/${img.file_path_processed || img.file_path_original}`
+                }));
+                
+                // Combine for lightbox navigation
+                currentMatchImages = [...sourceImages, ...targetImages];
+                
+                detail.innerHTML = `
+                    <h2>Match Details</h2>
+                    <div class="match-score-display">
+                        <div class="score-circle ${match.status === 'both_confirmed' ? 'confirmed' : ''}">
+                            ${((match.overall_score || 0) * 100).toFixed(0)}%
+                        </div>
+                        <span class="status-badge status-${match.status}">${formatStatus(match.status)}</span>
+                    </div>
+                    <div class="match-comparison">
+                        <div class="match-item-card">
+                            <h4>Your Item</h4>
+                            <p><strong>${match.source_item?.title || 'N/A'}</strong></p>
+                            <p>${UI.getCategoryIcon(match.source_item?.item_type)} ${match.source_item?.item_type || ''}</p>
+                            ${sourceImages.length > 0 ? `
+                                <div class="match-item-images">
+                                    ${sourceImages.map((img, i) => `
+                                        <div class="match-thumb" onclick="openLightbox(${i})" title="Click to enlarge">
+                                            <img src="${img.thumbnail}" alt="Your item image ${i + 1}" onerror="this.parentElement.style.display='none'">
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            ` : '<p style="font-size: 0.8rem; color: var(--secondary);">No images</p>'}
+                        </div>
+                        <div class="match-arrow-lg">↔️</div>
+                        <div class="match-item-card">
+                            <h4>Matched Item</h4>
+                            <p><strong>${match.target_item?.title || 'N/A'}</strong></p>
+                            <p>${UI.getCategoryIcon(match.target_item?.item_type)} ${match.target_item?.item_type || ''}</p>
+                            ${targetImages.length > 0 ? `
+                                <div class="match-item-images">
+                                    ${targetImages.map((img, i) => `
+                                        <div class="match-thumb" onclick="openLightbox(${sourceImages.length + i})" title="Click to enlarge">
+                                            <img src="${img.thumbnail}" alt="Matched item image ${i + 1}" onerror="this.parentElement.style.display='none'">
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            ` : '<p style="font-size: 0.8rem; color: var(--secondary);">No images</p>'}
+                        </div>
+                    </div>
+                    <p style="text-align: center; color: var(--secondary); font-size: 0.8rem; margin: 0.5rem 0 1rem;">
+                        💡 Click on any image thumbnail to view full size
+                    </p>
+                    ${match.contact_info ? `
+                        <div class="contact-revealed">
+                            <h4>🎉 Contact Information</h4>
+                            <p><strong>Email:</strong> ${match.contact_info.email}</p>
+                            ${match.contact_info.phone_number ? `<p><strong>Phone:</strong> ${match.contact_info.phone_number}</p>` : ''}
+                        </div>
+                    ` : ''}
+                    ${match.status !== 'both_confirmed' && match.status !== 'rejected' ? `
+                        <div class="match-actions">
+                            <button class="btn btn-primary btn-lg" onclick="confirmMatch('${match.id}')">✅ Confirm</button>
+                            <button class="btn btn-outline" onclick="rejectMatch('${match.id}')">❌ Reject</button>
+                        </div>
+                    ` : ''}
+                `;
+            } catch (error) {
+                detail.innerHTML = `<p class="error">❌ ${error.message}</p>`;
+            }
+        }
+
+        // Lightbox functions
+        function openLightbox(index) {
+            if (currentMatchImages.length === 0) return;
+            
+            const lightbox = document.getElementById('imageLightbox');
+            const img = document.getElementById('lightboxImg');
+            const counter = document.getElementById('lightboxCounter');
+            
+            img.src = currentMatchImages[index].original;
+            lightbox.dataset.currentIndex = index;
+            counter.textContent = `${index + 1} / ${currentMatchImages.length}`;
+            lightbox.classList.add('show');
+            
+            document.getElementById('lightboxPrev').style.display = currentMatchImages.length > 1 ? 'block' : 'none';
+            document.getElementById('lightboxNext').style.display = currentMatchImages.length > 1 ? 'block' : 'none';
+        }
+
+        function closeLightbox() {
+            document.getElementById('imageLightbox').classList.remove('show');
+        }
+
+        function navigateLightbox(direction) {
+            const lightbox = document.getElementById('imageLightbox');
+            let index = parseInt(lightbox.dataset.currentIndex) + direction;
+            
+            if (index < 0) index = currentMatchImages.length - 1;
+            if (index >= currentMatchImages.length) index = 0;
+            
+            openLightbox(index);
+        }
+
+        function closeMatchModal() {
+            document.getElementById('matchModal').classList.remove('show');
+        }
+
+        async function confirmMatch(matchId) {
+            try {
+                const result = await API.matches.confirm(matchId);
+                UI.toast('Match confirmed!', 'success');
+                if (result.status === 'both_confirmed') {
+                    UI.toast('🎉 Contact info revealed!', 'success');
+                }
+                viewMatch(matchId);
+                loadMatches();
+            } catch (error) {
+                UI.toast(error.message, 'error');
+            }
+        }
+
+        async function rejectMatch(matchId) {
+            try {
+                await API.matches.reject(matchId);
+                UI.toast('Match rejected', 'success');
+                closeMatchModal();
+                loadMatches();
+            } catch (error) {
+                UI.toast(error.message, 'error');
+            }
+        }
+
+        // ==================== NOTIFICATIONS ====================
+        async function loadNotifications() {
+            const container = document.getElementById('notificationsList');
+            const badge = document.getElementById('notifBadge');
+            
+            try {
+                const data = await API.notifications.list({ page_size: 50 });
+                const notifications = data.notifications || [];
+                const unreadCount = data.unread_count || 0;
+                
+                badge.textContent = unreadCount;
+                badge.style.display = unreadCount > 0 ? 'inline' : 'none';
+                
+                if (notifications.length === 0) {
+                    container.innerHTML = `<div class="empty-state"><span class="icon">🔔</span><h3>No notifications</h3></div>`;
+                } else {
+                    container.innerHTML = `
+                        <div class="notif-actions">
+                            <button class="btn btn-outline btn-sm" onclick="markAllRead()">✓ Mark All Read</button>
+                        </div>
+                        ${notifications.map(n => `
+                            <div class="notification-item ${n.is_read ? '' : 'unread'}">
+                                <div class="notif-icon">${n.is_read ? '📭' : '📬'}</div>
+                                <div class="notif-content">
+                                    <strong>${n.title || 'Notification'}</strong>
+                                    <p>${n.message || ''}</p>
+                                    <span class="notif-time">${UI.formatDate(n.created_at)}</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    `;
+                }
+            } catch (error) {
+                container.innerHTML = `<div class="empty-state"><span class="icon">❌</span><p>${error.message}</p></div>`;
+            }
+        }
+
+        async function markAllRead() {
+            try {
+                await API.notifications.markAllRead();
+                UI.toast('Marked all as read', 'success');
+                loadNotifications();
+            } catch (error) {
+                UI.toast(error.message, 'error');
+            }
+        }
+
+        // Modal close handlers
+        document.getElementById('matchModal').onclick = (e) => { if (e.target.id === 'matchModal') closeMatchModal(); };
+        document.getElementById('findMatchesModal').onclick = (e) => { if (e.target.id === 'findMatchesModal') closeFindMatchesModal(); };
+
+        // Keyboard navigation for lightbox
+        document.addEventListener('keydown', (e) => {
+            const lightbox = document.getElementById('imageLightbox');
+            if (!lightbox.classList.contains('show')) return;
+            
+            if (e.key === 'Escape') closeLightbox();
+            if (e.key === 'ArrowLeft') navigateLightbox(-1);
+            if (e.key === 'ArrowRight') navigateLightbox(1);
+        });
+    </script>
+</body>
+</html>
