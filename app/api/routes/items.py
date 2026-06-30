@@ -191,7 +191,14 @@ async def update_item(
         setattr(item, field, value)
     
     await db.commit()
-    await db.refresh(item, ["images"])
+    
+    # Re-fetch item with images loaded to avoid expired attributes
+    result = await db.execute(
+        select(Item)
+        .options(selectinload(Item.images))
+        .where(Item.id == item_id)
+    )
+    item = result.scalar_one()
     
     return ItemResponse.model_validate(item)
 

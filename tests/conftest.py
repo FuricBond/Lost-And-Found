@@ -18,7 +18,7 @@ from app.services.auth import auth_service
 
 
 # Test database URL (use a separate test database)
-TEST_DATABASE_URL = "postgresql+asyncpg://user:password@localhost:5432/lostfound_test"
+TEST_DATABASE_URL = "sqlite+aiosqlite:///./data/lostfound_test.db"
 
 
 @pytest.fixture(scope="session")
@@ -29,7 +29,7 @@ def event_loop() -> Generator:
     loop.close()
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture
 async def test_engine():
     """Create a test database engine."""
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
@@ -78,7 +78,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 async def test_user(db_session: AsyncSession) -> User:
     """Create a test user."""
     user = User(
-        id=uuid4(),
+        id=str(uuid4()),
         email="test@example.com",
         hashed_password=auth_service.hash_password("testpassword123"),
         full_name="Test User",
